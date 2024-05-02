@@ -1,4 +1,4 @@
-# Chiliz Challenge Metaverse App
+# Chilizen Challenge Metaverse App
 EVM version of Challenge Metaverse ( Version of Hiring Purpose )
 
 
