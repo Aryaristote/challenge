@@ -19,7 +19,7 @@ const addMerch = handleAsync(async (req, res) => {
       !brand ||
       !title ||
       !description ||
-      !imageUrl 
+      !imageUrl
     )
       return res.status(400).json({
         message: "All fields are required",
@@ -31,7 +31,7 @@ const addMerch = handleAsync(async (req, res) => {
         ],
         data: [],
       });
-      
+
     const addedAt = new Date();
 
     const merch = new Merch({
@@ -52,7 +52,7 @@ const addMerch = handleAsync(async (req, res) => {
           color: item.color,
           imageUrl
         })
-    
+
         const result = await color.save();
         if (result) {
           const colorId = result._id;
@@ -63,7 +63,7 @@ const addMerch = handleAsync(async (req, res) => {
               merchPrice: subItem.price,
               amount: subItem.amount,
             })
-    
+
             await size.save();
           })
         }
@@ -86,16 +86,16 @@ const getAllMerches = handleAsync(async (req, res) => {
 const getMerchById = handleAsync(async (req, res) => {
   const _id = req.params.id;
   const merch = await Merch.findOne({ _id });
-  const colors = await Color.find({merchId: _id});
+  const colors = await Color.find({ merchId: _id });
   const detailData = await Promise.map(colors, async color => {
-    const sizes = await Size.find({colorId: color._id});
+    const sizes = await Size.find({ colorId: color._id });
     return {
       ...color._doc,
       sizes
     }
   });
 
-  if (merch) return res.status(200).json({ message: "Success", data: {...merch._doc, colors: detailData} });
+  if (merch) return res.status(200).json({ message: "Success", data: { ...merch._doc, colors: detailData } });
   else return res.status(404).json({ message: "Fail", data: [] });
 });
 
@@ -109,7 +109,7 @@ const removeMerch = handleAsync(async (req, res) => {
       data: [],
     });
 
-  await Cart.deleteMany({merchId: id});
+  await Cart.deleteMany({ merchId: id });
   Merch.findOneAndDelete({ _id: id }, (err, result) => {
     if (err) {
       console.log("err", err);
@@ -123,24 +123,24 @@ const removeMerch = handleAsync(async (req, res) => {
 });
 
 const updateMerch = handleAsync(async (req, res) => {
-	const { _id, ...data } = req.body;
+  const { _id, ...data } = req.body;
 
-	const exist = await Merch.findById(_id);
-	if (!exist)  
-		return res.status(400).json({
-			message: "Could'nt find any NFT associated with this id",
-			data: [],
-		});
+  const exist = await Merch.findById(_id);
+  if (!exist)
+    return res.status(400).json({
+      message: "Could'nt find any NFT associated with this id",
+      data: [],
+    });
 
-	const updateResult = await Merch.findByIdAndUpdate(_id, data);
-	if (updateResult) return res.status(200).json({ message: "Success"});
-	else return res.status(200).json({ message: "Failed"})
+  const updateResult = await Merch.findByIdAndUpdate(_id, data);
+  if (updateResult) return res.status(200).json({ message: "Success" });
+  else return res.status(200).json({ message: "Failed" })
 });
 
 module.exports = {
-	addMerch,
-	getAllMerches,
-	getMerchById,
-	updateMerch,
-	removeMerch
+  addMerch,
+  getAllMerches,
+  getMerchById,
+  updateMerch,
+  removeMerch
 };

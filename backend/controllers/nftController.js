@@ -102,7 +102,6 @@ module.exports = {
   saveNFT,
   removeNFTById,
   getAllNFTs,
-  getAllNFTs,
   clearDB,
   getAllFeaturedNFT,
   getNFTById,

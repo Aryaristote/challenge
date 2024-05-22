@@ -28,26 +28,26 @@ const removeCurrency = handleAsync(async (req, res) => {
   const { id } = req.params;
 
   const merchExists = await Currency.findById(id);
-    if (!merchExists)
-        return res.status(400).json({
-            message: "Could'nt find any NFT associated with this id",
-            data: [],
-        });
-
-    Currency.findOneAndDelete({ _id: id }, (err, result) => {
-        if (err) {
-            console.log("err", err);
-            return res.status(400).json({ message: "Invalid Request", data: [] });
-        } else {
-            return res
-                .status(200)
-                .json({ message: "Success", data: [] });
-        }
+  if (!merchExists)
+    return res.status(400).json({
+      message: "Could'nt find any NFT associated with this id",
+      data: [],
     });
+
+  Currency.findOneAndDelete({ _id: id }, (err, result) => {
+    if (err) {
+      console.log("err", err);
+      return res.status(400).json({ message: "Invalid Request", data: [] });
+    } else {
+      return res
+        .status(200)
+        .json({ message: "Success", data: [] });
+    }
+  });
 });
 
 module.exports = {
-	getAllCurrencies,
-    addCurrency,
-    removeCurrency
+  getAllCurrencies,
+  addCurrency,
+  removeCurrency
 };

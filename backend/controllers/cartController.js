@@ -9,26 +9,29 @@ const Size = require("../models/Size");
 const Trade = require("../models/Trade");
 const Promise = require("bluebird");
 
+// Helper function to fetch cart details
+const fetchCartDetails = async (cart) => {
+    const merch = await Merch.findById(cart.merchId);
+    const color = await Color.findById(cart.colorId);
+    const size = await Size.findById(cart.sizeId);
+
+    return {
+        ...cart._doc,
+        title: merch?.title || "",
+        description: merch?.description || "",
+        imageUrl: color?.imageUrl || "",
+        size: size?.size || "",
+        totalAmount: size?.amount || 0,
+        price: size?.merchPrice || 0
+    };
+};
+
 const getCart = handleAsync(async (req, res) => {
     const { userId } = req.params;
 
-    const cartResult = await Cart.find({userId});
+    const cartResult = await Cart.find({ userId });
     if (cartResult) {
-        const detailResult = await Promise.map(cartResult, async cart => {
-            const merch = await Merch.findById(cart.merchId);
-            const color = await Color.findById(cart.colorId);
-            const size = await Size.findById(cart.sizeId);
-
-            return {
-                ...cart._doc,
-                title: merch.title,
-                description: merch.description,
-                imageUrl: color.imageUrl,
-                size: size.size,
-                totalAmount: size.amount,
-                price: size.merchPrice
-            }
-        });
+        const detailResult = await Promise.map(cartResult, fetchCartDetails);
         return res.status(200).json({ message: "Success", data: detailResult });
     }
     return res.status(400).json({ message: "Invalid Request", data: [] });
@@ -37,7 +40,7 @@ const getCart = handleAsync(async (req, res) => {
 const getCartNum = handleAsync(async (req, res) => {
     const { userId } = req.body;
 
-    const cartResult = await Cart.find({userId});
+    const cartResult = await Cart.find({ userId });
     if (cartResult) {
         return res.status(200).json({ message: "Success", data: cartResult.length });
     }
@@ -46,12 +49,12 @@ const getCartNum = handleAsync(async (req, res) => {
 
 const addMerch = handleAsync(async (req, res) => {
     const cart = new Cart(req.body);
-    const result = await Cart.findOne({userId: cart.userId, sizeId: cart.sizeId, tokenIndex: cart.tokenIndex});
+    const result = await Cart.findOne({ userId: cart.userId, sizeId: cart.sizeId, tokenIndex: cart.tokenIndex });
+
     let saveCart;
     if (result) {
-        let newResult = {...result._doc};
-        newResult.amount++;
-        saveCart = await Cart.updateOne({_id: result._id}, { $set: {...newResult}});
+        result.amount++;
+        saveCart = await result.save();
     } else {
         saveCart = await cart.save();
     }
@@ -64,7 +67,7 @@ const addMerch = handleAsync(async (req, res) => {
 const increaseAmount = handleAsync(async (req, res) => {
     const { _id, amount } = req.body;
 
-    const result = await Cart.findByIdAndUpdate(_id, {$set: { amount }});
+    const result = await Cart.findByIdAndUpdate(_id, { $set: { amount } }, { new: true });
     if (result) {
         return res.status(200).json({ message: "Success", data: [] });
     }
@@ -74,8 +77,8 @@ const increaseAmount = handleAsync(async (req, res) => {
 const removeMerch = handleAsync(async (req, res) => {
     const { sizeId, userId } = req.query;
 
-    const result = await Cart.deleteMany({userId, sizeId});
-    if (result) {
+    const result = await Cart.deleteMany({ userId, sizeId });
+    if (result.deletedCount > 0) {
         return res.status(200).json({ message: "Success", data: [] });
     }
     return res.status(400).json({ message: "Invalid Request", data: [] });
@@ -87,48 +90,47 @@ const buyAll = handleAsync(async (req, res) => {
     const data = await connection.getParsedTransaction(transactionId);
 
     if (!data) {
-        return res.status(400).json({
-          message: "invalid Transaction ID",
-        });
+        return res.status(400).json({ message: "Invalid Transaction ID" });
     }
 
-    if (type === "Sol") {
-        if (data.transaction.message.instructions[0].parsed.info) {
-            const info = data.transaction.message.instructions[0].parsed.info;
-            let isValid = false;
-            merchData.merchPrice.forEach(element => {
-                if(info.destination.toLowerCase() === toPubkey.toLowerCase() && info.lamports*0.000000001 == element.price){
-                    isValid = true
-                }
-            });
-            if (!isValid) {
-              res.status(400).json({ message: "Invalid type of transaction" });
-            }
-        }
-    } else if (type === "spl-token") {
-        if (data.transaction.message.instructions[0].parsed.info) {
-          const info = data.meta.preTokenBalances;
-          const transaction = data.transaction.message.instructions[0].parsed.info;
-          let isValid = false;
-          merchData.merchPrice.forEach(element => {
-            if( info[0].owner.toLowerCase() === toPubkey.toLowerCase() &&
-            info[0].mint.toLowerCase() === element.token.toLowerCase() &&
-            transaction.tokenAmount.amount*0.000000001 == element.token){
-              isValid = true
-            }
-          })
-          if (!isValid){
-            res.status(400).json({ message: "Invalid type of transaction" });
-          }
-        }
-      } else {
-        res.status(400).json({ message: "Invalid type of transaction" });
-      }
+    // Fetch merch data for price validation
+    const cartItems = await Cart.find({ userId, tokenIndex });
+    const merchData = await Promise.map(cartItems, async (cartItem) => {
+        const merch = await Merch.findById(cartItem.merchId);
+        return {
+            price: merch.merchPrice,
+            token: merch.token
+        };
+    });
 
+    const validateTransaction = (info, merchPrices) => {
+        return merchPrices.some(element =>
+            info.destination.toLowerCase() === toPubkey.toLowerCase() && info.lamports * 0.000000001 === element.price
+        );
+    };
+
+    const validateSplTokenTransaction = (info, transaction, merchPrices) => {
+        return merchPrices.some(element =>
+            info[0].owner.toLowerCase() === toPubkey.toLowerCase() &&
+            info[0].mint.toLowerCase() === element.token.toLowerCase() &&
+            transaction.tokenAmount.amount * 0.000000001 === element.token
+        );
+    };
+
+    let isValid = false;
+    if (type === "Sol" && data.transaction.message.instructions[0].parsed.info) {
+        isValid = validateTransaction(data.transaction.message.instructions[0].parsed.info, merchData);
+    } else if (type === "spl-token" && data.transaction.message.instructions[0].parsed.info) {
+        isValid = validateSplTokenTransaction(data.meta.preTokenBalances, data.transaction.message.instructions[0].parsed.info, merchData);
+    }
+
+    if (!isValid) {
+        return res.status(400).json({ message: "Invalid type of transaction" });
+    }
 
     const soldAt = new Date();
 
-    const cartResult = await Cart.find({userId, tokenIndex});
+    const cartResult = await Cart.find({ userId, tokenIndex });
     if (cartResult) {
         await Promise.map(cartResult, async cart => {
             const merch = await Merch.findById(cart.merchId);
@@ -149,11 +151,9 @@ const buyAll = handleAsync(async (req, res) => {
 
             const savedTrade = await trade.save();
             if (savedTrade) {
-                const sizeData = await Size.findById(size._id);
-                let newSizeData = {...sizeData};
-                newSizeData.amount = newSizeData.amount - cart.amount * 1;
-                await Size.updateOne({_id: size._id}, {$set: {...newSizeData}});
-                await Cart.findByIdAndRemove(cart._id)
+                size.amount -= cart.amount;
+                await size.save();
+                await Cart.findByIdAndRemove(cart._id);
             }
         });
         return res.status(200).json({ message: "Success" });
